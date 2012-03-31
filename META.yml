@@ -1,0 +1,28 @@
+---
+abstract: 'Talk with cloudinary.com'
+author:
+  - 'Jan Henning Thorsen - jan.henning@oppstarter.no'
+build_requires:
+  ExtUtils::MakeMaker: 6.36
+  Test::More: 0.9
+configure_requires:
+  ExtUtils::MakeMaker: 6.36
+distribution_type: module
+dynamic_config: 1
+generated_by: 'Module::Install version 1.06'
+license: unknown
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Mojolicious-Plugin-Cloudinary
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  Mojolicious: 2.65
+resources:
+  bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=Mojolicious-Plugin-Cloudinary
+  homepage: http://search.cpan.org/dist/Mojolicious-Plugin-Cloudinary
+  repository: git://github.com/jhthorsen/mojolicious-plugin-cloudinary
+version: 0.01
