@@ -6,7 +6,7 @@ Mojolicious::Plugin::Cloudinary - Talk with cloudinary.com
 
 =head1 VERSION
 
-0.01
+0.02
 
 =head1 DESCRIPTION
 
@@ -84,8 +84,8 @@ use Mojo::UserAgent;
 use Mojo::Util qw/ sha1_sum url_escape /;
 use Scalar::Util 'weaken';
 
-our $VERSION = eval '0.01';
-my @SIGNATURE_KEYS = qw/ callback eager format public_id tags timestamp transformation /;
+our $VERSION = eval '0.02';
+my @SIGNATURE_KEYS = qw/ callback eager format public_id tags timestamp transformation type /;
 
 =head1 ATTRIBUTES
 
@@ -101,26 +101,18 @@ Your API key from L<https://cloudinary.com/console>
 
 Your API secret from L<https://cloudinary.com/console>
 
-=head2 api_url
-
-Default is L<http://api.cloudinary.com/v1_1>.
-
 =head2 private_cdn
 
-Your private CDN url from L<http://api.cloudinary.com/v1_1>.
-
-=head2 public_cdn
-
-Default is L<http://res.cloudinary.com>.
+Your private CDN url from L<https://cloudinary.com/console>.
 
 =cut
 
 __PACKAGE__->attr(cloud_name => sub { die 'cloud_name is required in constructor' });
 __PACKAGE__->attr(api_key => sub { die 'api_key is required in constructor' });
 __PACKAGE__->attr(api_secret => sub { die 'api_secret is required in constructor' });
-__PACKAGE__->attr(api_url => sub { 'http://api.cloudinary.com/v1_1' });
 __PACKAGE__->attr(private_cdn => sub { die 'private_cdn is required in constructor' });
-__PACKAGE__->attr(public_cdn => sub { 'http://res.cloudinary.com' });
+__PACKAGE__->attr(_api_url => sub { 'http://api.cloudinary.com/v1_1' });
+__PACKAGE__->attr(_public_cdn => sub { 'http://res.cloudinary.com' });
 __PACKAGE__->attr(_ua => sub {
     my $ua = Mojo::UserAgent->new;
 
@@ -190,7 +182,7 @@ sub upload {
 
     for my $name (qw/ file on_success /) {
         defined $args->{$name}
-            or die "Usage: \$self->upload_to_cloudinary({ $name => ... })";
+            or die "Usage: \$self->upload({ $name => ... })";
     }
 
     if(ref $args->{'tags'} eq 'ARRAY') {
@@ -209,27 +201,58 @@ sub upload {
         };
     }
 
-    $self->_call_api(upload => $args);
+    $self->_call_api(upload => $args, {
+        timestamp => time,
+        (map { ($_, $args->{$_}) } grep { defined $args->{$_} } @SIGNATURE_KEYS),
+        file => $args->{'file'},
+    });
+}
+
+=head2 destroy
+
+    $self->destroy({
+        public_id => $public_id,
+        on_success => sub {
+            my($res) = @_;
+            # ...
+        },
+        on_error => sub {
+            my($res, $tx) = @_;
+            # ...
+        },
+    });
+
+Will delete an image from cloudinary, identified by C<$public_id>.
+
+=cut
+
+sub destroy {
+    my($self, $args) = @_;
+
+    for my $name (qw/ public_id on_success /) {
+        defined $args->{$name}
+            or die "Usage: \$self->destroy({ $name => ... })";
+    }
+
+    $args->{'resource_type'} ||= 'image';
+
+    $self->_call_api(destroy => $args, {
+        public_id => $args->{'public_id'},
+        timestamp => $args->{'timestamp'} || time,
+        type => $args->{'type'} || 'upload',
+    });
 }
 
 sub _call_api {
-    my($self, $action, $args) = @_;
-    my $url = join '/', $self->api_url, $self->cloud_name, $args->{'resource_type'}, $action;
+    my($self, $action, $args, $post) = @_;
+    my $url = join '/', $self->_api_url, $self->cloud_name, $args->{'resource_type'}, $action;
     my $on_error = $args->{'on_error'} || sub {};
     my $on_success = $args->{'on_success'};
     my $headers = { 'Content-Type' => 'multipart/form-data' };
-    my $post = {};
-
-    for my $k (@SIGNATURE_KEYS, 'file') {
-        $post->{$k} = $args->{$k} if defined $args->{$k};
-    }
 
     $post->{'api_key'} = $self->api_key;
     $post->{'signature'} = $self->_api_sign_request($post);
 
-    $self->_ua->on(error => sub {
-        warn @_;
-    });
     $self->_ua->post_form($url, $post, $headers, sub {
         my($ua, $tx) = @_;
 
@@ -260,7 +283,7 @@ sub _api_sign_request {
     $url_obj = $self->url_for("$public_id.$format", \%args);
 
 This method will return a public URL to the image at L<http://cloudinary.com>.
-It will use L</private_cdn> or L</public_cdn> and L</cloud_name> to construct
+It will use L</private_cdn> or the public CDN and L</cloud_name> to construct
 the URL. The return value is a L<Mojo::URL> object.
 
 Example C<%args>:
@@ -268,7 +291,7 @@ Example C<%args>:
     {
         w => 100, # width of image
         h => 150, # height of image
-        secure => $bool, # use private_cdn or public_cdn
+        secure => $bool, # use private_cdn or public cdn
     }
 
 =cut
@@ -278,12 +301,12 @@ sub url_for {
     my $public_id = shift or die 'Usage: $self->url_for($public_id, ...)';
     my $args = shift || {};
     my $format = $public_id =~ s/\.(\w+)// ? $1 : 'jpg';
-    my $url = Mojo::URL->new(delete $args->{'secure'} ? $self->private_cdn : $self->public_cdn);
+    my $url = Mojo::URL->new(delete $args->{'secure'} ? $self->private_cdn : $self->_public_cdn);
 
     $url->path(join '/', grep { length }
         $self->cloud_name,
         $args->{'resource_type'} || 'image',
-        'upload',
+        $args->{'type'} || 'upload',
         join(',', map { $_ .'_' .$args->{$_} } sort keys %$args),
         "$public_id.$format",
     );
@@ -298,6 +321,8 @@ Adds the helpers to your controller:
 =over 4
 
 =item * cloudinary_upload
+
+=item * cloudinary_destroy
 
 See L</upload>.
 
@@ -320,11 +345,16 @@ sub register {
         my $c = shift;
         $self->upload(@_);
     });
+    $app->helper(cloudinary_destroy => sub {
+        my $c = shift;
+        $self->destroy(@_);
+    });
     $app->helper(cloudinary_url_for => sub {
         my($c, $public_id, $args) = @_;
+        my $scheme = $c->req->url->scheme || '';
 
-        if($c->req->url->scheme eq 'https') {
-            $args->{'secure'} = 1 unless(defined $args->{'secure'});
+        if(not defined $args->{'secure'} and $scheme eq 'https') {
+            $args->{'secure'} = 1;
         }
 
         return  $self->url_for($public_id, $args);
