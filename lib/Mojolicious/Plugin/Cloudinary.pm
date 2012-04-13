@@ -6,7 +6,7 @@ Mojolicious::Plugin::Cloudinary - Talk with cloudinary.com
 
 =head1 VERSION
 
-0.02
+0.03
 
 =head1 DESCRIPTION
 
@@ -76,6 +76,14 @@ generic module - just skip calling L</register>.
     # and $delay->end in each on_xxx callback
     $delay->wait;
 
+=head2 url_for() examples
+
+    $cloudinary->url_for('billclinton.jpg', { type => 'facebook' });
+    $cloudinary->url_for('billclinton.jpg', { type => 'twitter_name', h => 70, w => 100 });
+    $cloudinary->url_for('18913373.jpg', { type => 'twitter_name' });
+    $cloudinary->url_for('my-uploaded-image.jpg', { h => 50, w => 50 });
+    $cloudinary->url_for('myrawid', { resource_type => 'raw' });
+
 =cut
 
 use Mojo::Base 'Mojolicious::Plugin';
@@ -84,7 +92,7 @@ use Mojo::UserAgent;
 use Mojo::Util qw/ sha1_sum url_escape /;
 use Scalar::Util 'weaken';
 
-our $VERSION = eval '0.02';
+our $VERSION = eval '0.03';
 my @SIGNATURE_KEYS = qw/ callback eager format public_id tags timestamp transformation type /;
 
 =head1 ATTRIBUTES
@@ -137,6 +145,7 @@ __PACKAGE__->attr(_ua => sub {
         timestamp => $epoch, # time()
         public_id => $str, # optional
         format => $str, # optional
+        resource_type => $str, # image or raw. defaults to "image"
         tags => ['foo', 'bar'], # optional
         on_success => sub {
             my($res) = @_;
@@ -149,7 +158,26 @@ __PACKAGE__->attr(_ua => sub {
     });
 
 Will upload a file to L<http://cloudinary.com> using the parameters given
-L</cloud_name> L</api_key> and L</api_secret>. The C<file> can be:
+L</cloud_name>, L</api_key> and L</api_secret>. C<$res> in C<on_success>
+will be the json response from cloudinary:
+
+    {
+        url => $str,
+        secure_url => $str,
+        public_id => $str,
+        version => $str,
+        width => $int, # only for images
+        height => $int, # only for images
+    }
+
+C<$res> for C<on_error> on the other hand can be either C<undef> if there
+was an issue connecting/communicating with cloudinary or a an error:
+
+    {
+        error => { message: $str },
+    }
+
+The C<file> can be:
 
 =over 4
 
@@ -169,7 +197,8 @@ C<res> in callbacks will be the JSON response from L<http://cloudinary.com>
 as a hash ref. It may also be C<undef> if something went wrong with the
 actual HTTP POST.
 
-See also L<https://cloudinary.com/documentation/upload_images>.
+See also L<https://cloudinary.com/documentation/upload_images> and
+L<http://cloudinary.com/documentation/upload_images#raw_uploads>.
 
 =cut
 
@@ -212,8 +241,8 @@ sub upload {
 
     $self->destroy({
         public_id => $public_id,
+        resource_type => $str, # image or raw. defaults to "image"
         on_success => sub {
-            my($res) = @_;
             # ...
         },
         on_error => sub {
@@ -223,6 +252,15 @@ sub upload {
     });
 
 Will delete an image from cloudinary, identified by C<$public_id>.
+C<on_success> will be called when the image got deleted, while C<on_error>
+is called if not: C<$res> can be either C<undef> if there was an issue
+connecting/communicating with cloudinary or a an error:
+
+    {
+        error => { message: $str },
+    }
+
+See also L<https://cloudinary.com/documentation/upload_images#deleting_images>.
 
 =cut
 
@@ -291,8 +329,13 @@ Example C<%args>:
     {
         w => 100, # width of image
         h => 150, # height of image
+        resource_type => $str, # image or raw. defaults to "image"
+        type => $str, # upload, facebook. defaults to "upload"
         secure => $bool, # use private_cdn or public cdn
     }
+
+See also L<http://cloudinary.com/documentation/upload_images#accessing_uploaded_images>
+and L<http://cloudinary.com/documentation/image_transformations>.
 
 =cut
 
