@@ -21,5 +21,6 @@ t/00-load.t
 t/00-pod-coverage.t
 t/00-pod.t
 t/10-cloudinary.t
+t/10-register.t
 t/90-real.t
 t/test.jpg
